@@ -11,6 +11,20 @@ import {
   type Rascunho,
 } from './lib/base'
 import { mesclar, montarBackup, nomeDoBackup, registroMeu, type Registro } from './lib/registro'
+import {
+  enfileirar,
+  enviarFila,
+  gravarEnderecoPc,
+  gravarFila,
+  jogadoresDoPc,
+  lerEnderecoPc,
+  lerFila,
+  semEnviados,
+  statusDoPc,
+  type EstadoPc,
+  type Fila,
+  type Operacao,
+} from './lib/sincronia'
 import { jogadorNovo, recalcular } from './lib/fmrte'
 import { exportarArquivo } from './lib/exportar'
 import { atualizarPara, VERSAO, versaoPublicada } from './lib/versao'
@@ -29,6 +43,9 @@ export default function App() {
   const [aberto, setAberto] = useState<Registro | null>(null)
   const [ultimoBackup, setUltimoBackup] = useState(lerUltimoBackup)
   const [novaVersao, setNovaVersao] = useState<string | null>(null)
+  const [enderecoPc, setEnderecoPc] = useState(lerEnderecoPc)
+  const [fila, setFila] = useState<Fila>(lerFila)
+  const [estadoPc, setEstadoPc] = useState<EstadoPc>(() => (lerEnderecoPc() ? { tipo: 'conferindo' } : { tipo: 'sem' }))
   const [aviso, setAviso] = useState('')
   const timer = useRef<number | undefined>(undefined)
 
@@ -40,6 +57,7 @@ export default function App() {
 
   useEffect(() => gravarRascunho(rascunho), [rascunho])
   useEffect(() => gravarMeus(meus), [meus])
+  useEffect(() => gravarFila(fila), [fila])
 
   // Jogador novo na base = build novo no GitHub Pages. Confere ao abrir e toda
   // vez que o app volta para a tela.
@@ -56,6 +74,87 @@ export default function App() {
     return () => document.removeEventListener('visibilitychange', aoVoltar)
   }, [])
 
+  // ------------------------------------------------------------ sincronia com o PC
+
+  // O envio é assíncrono: lê sempre o estado mais novo pelas refs.
+  const meusRef = useRef(meus)
+  const filaRef = useRef(fila)
+  meusRef.current = meus
+  filaRef.current = fila
+  const enviando = useRef(false)
+
+  const sincronizar = useCallback(async () => {
+    if (!enderecoPc || enviando.current) return
+    enviando.current = true
+    try {
+      const status = await statusDoPc(enderecoPc)
+      if (!status) return setEstadoPc({ tipo: 'offline' })
+      const pendentes = filaRef.current
+      if (Object.keys(pendentes).length) {
+        const enviados = await enviarFila(enderecoPc, pendentes, meusRef.current)
+        setFila((atual) => semEnviados(atual, enviados))
+        const depois = await statusDoPc(enderecoPc)
+        setEstadoPc(depois ? { tipo: 'online', status: depois } : { tipo: 'offline' })
+      } else {
+        setEstadoPc({ tipo: 'online', status })
+      }
+    } finally {
+      enviando.current = false
+    }
+  }, [enderecoPc])
+
+  // Ao abrir, ao voltar para a tela e a cada 30 s com o app aberto.
+  useEffect(() => {
+    if (!enderecoPc) return
+    void sincronizar()
+    const aoVoltar = () => {
+      if (document.visibilityState === 'visible') void sincronizar()
+    }
+    document.addEventListener('visibilitychange', aoVoltar)
+    const intervalo = window.setInterval(aoVoltar, 30_000)
+    return () => {
+      document.removeEventListener('visibilitychange', aoVoltar)
+      window.clearInterval(intervalo)
+    }
+  }, [enderecoPc, sincronizar])
+
+  // Mudou a fila (salvou, excluiu, importou): tenta mandar na hora.
+  useEffect(() => {
+    if (Object.keys(fila).length) void sincronizar()
+  }, [fila, sincronizar])
+
+  const paraOPc = (ids: string[], op: Operacao) => {
+    if (enderecoPc && ids.length) setFila((f) => enfileirar(f, ids, op))
+  }
+
+  const conectarPc = (endereco: string) => {
+    gravarEnderecoPc(endereco)
+    setEnderecoPc(endereco)
+    if (!endereco) {
+      setFila({})
+      setEstadoPc({ tipo: 'sem' })
+      return
+    }
+    setEstadoPc({ tipo: 'conferindo' })
+    // Tudo o que já está no aparelho vai para o PC na primeira vez.
+    setFila((f) => enfileirar(f, meus.map((m) => m.id), 'salvar'))
+  }
+
+  const trazerDoPc = async () => {
+    if (!enderecoPc) return
+    if (Object.keys(fila).length) return avisar('Espere a fila ir para o PC antes de trazer')
+    try {
+      const doPc = await jogadoresDoPc(enderecoPc)
+      const { lista, novos, atualizados } = mesclar(meus, doPc)
+      setMeus(lista)
+      avisar(`Do PC: ${novos} novo(s), ${atualizados} atualizado(s)`)
+    } catch {
+      avisar('O PC não respondeu')
+    }
+  }
+
+  // ------------------------------------------------------------ jogadores
+
   const registros = useMemo(() => [...meus, ...BASE], [meus])
 
   const salvar = () => {
@@ -64,11 +163,13 @@ export default function App() {
     const dados = recalcular({ ...rascunho.dados, Name: nome })
     if (rascunho.editando && meus.some((m) => m.id === rascunho.editando)) {
       setMeus(meus.map((m) => (m.id === rascunho.editando ? registroMeu(dados, m.id) : m)))
+      paraOPc([rascunho.editando], 'salvar')
       avisar('Alterações salvas')
     } else {
       const novo = registroMeu(dados)
       setMeus([novo, ...meus])
       setRascunho({ dados, editando: novo.id })
+      paraOPc([novo.id], 'salvar')
       avisar('Salvo em Meus jogadores')
     }
   }
@@ -90,6 +191,7 @@ export default function App() {
   const excluir = (r: Registro) => {
     setMeus(meus.filter((m) => m.id !== r.id))
     if (rascunho.editando === r.id) setRascunho({ ...rascunho, editando: undefined })
+    paraOPc([r.id], 'excluir')
     setAberto(null)
     avisar('Jogador excluído')
   }
@@ -98,6 +200,10 @@ export default function App() {
     const recalculados = chegando.map((r) => ({ ...r, dados: recalcular(r.dados) }))
     const { lista, novos, atualizados } = mesclar(meus, recalculados)
     setMeus(lista)
+    paraOPc(
+      recalculados.map((r) => r.id),
+      'salvar',
+    )
     if (backup) avisar(`Backup restaurado: ${novos} novo(s), ${atualizados} atualizado(s)`)
     else avisar(chegando.length === 1 ? `${chegando[0].nome} importado` : `${chegando.length} jogadores importados`)
   }
@@ -124,6 +230,14 @@ export default function App() {
           onImportar={importar}
           onBackup={fazerBackup}
           avisar={avisar}
+          pc={{
+            endereco: enderecoPc,
+            estado: estadoPc,
+            pendentes: Object.keys(fila).length,
+            onConectar: conectarPc,
+            onSincronizar: () => void sincronizar(),
+            onTrazer: () => void trazerDoPc(),
+          }}
         />
       )}
 

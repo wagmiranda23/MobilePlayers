@@ -26,6 +26,8 @@ base e publica pelo GitHub Actions (`.github/workflows/publicar.yml`).
 | `npm test` | cálculo contra 7 exports reais do FMRTE, formato, posições e backup |
 | `npm run conferir` | confere os JSONs da base; sai com erro se houver aviso (o deploy roda isso) |
 | `npm run conferir -- --gravar "Nome (2005-06)"` | regrava CA/PA/RCA/ratings e a ordem das chaves |
+| `npm run pc` | roda o programa do PC no terminal (recebe os jogadores do iPhone) |
+| `npm run pc:instalar` / `pc:desinstalar` | liga/desliga o programa do PC junto com o Windows (atalho em `shell:startup`) |
 
 ## Onde vive o quê
 
@@ -39,6 +41,9 @@ base e publica pelo GitHub Actions (`.github/workflows/publicar.yml`).
 | `src/lib/registro.ts` | registro (jogador + origem), backup, importação, mesclar — puro, testável |
 | `src/lib/base.ts` | a base (`src/data/jogadores/*.json`) + "meus" e rascunho (localStorage) |
 | `src/lib/versao.ts` | confere se há build novo publicado e oferece atualizar |
+| `src/lib/sincronia.ts` | fila do iPhone e envio para o PC |
+| `servidor/pc.ts`, `servidor/pasta.ts` | o programa do PC: HTTP em 127.0.0.1:8765, grava em `meus/` |
+| `meus/` | **jogadores criados no iPhone**, só no PC (no `.gitignore`, nunca vai para o GitHub) |
 | `src/telas/` | `Criar`, `Base`, `Ficha` |
 | `src/components/` | `ui.tsx` (caixas, seções, folha) e `Campinho.tsx` |
 | `src/data/jogadores/` | **a base**: um JSON por jogador |
@@ -114,6 +119,26 @@ O usuário **autorizou commit e push direto** quando o Claude cria jogadores:
 7. `npm test`, commit (`Adiciona Kaká (2006-07)`) e push na `main`. Em 1–2
    minutos o GitHub publica, e o app no iPhone mostra "Base atualizada".
 
+## Sincronia com o PC
+
+O GitHub guarda só o código e a base que o Claude gera. Os jogadores que o
+usuário cria no iPhone **não vão para o GitHub**: vão para `meus/`, no PC.
+
+- O iPhone fala com o programa do PC pela rede do **Tailscale** (no PC e no
+  iPhone, mesma conta). No PC, `tailscale serve --bg 8765` publica o programa
+  em `https://<pc>.<rede>.ts.net`; o usuário cola esse endereço uma vez no app
+  (aba Base → Sincronizar com o PC).
+- Salvar, excluir e importar no iPhone entram numa fila no aparelho. A fila é
+  enviada quando o app está aberto e o PC responde (ao abrir, ao voltar para a
+  tela, a cada 30 s). O iOS não roda app web em segundo plano.
+- Em `meus/`: um JSON por jogador, com o nome de arquivo da base;
+  `.indice.json` liga o id do iPhone ao arquivo; excluir move para
+  `meus/lixeira/` (a pasta não tem git por trás); log em `.servidor.log`.
+- O programa só aceita navegador vindo do app publicado ou de localhost/rede
+  local (`ORIGENS` em `servidor/pc.ts`). Se o endereço publicado mudar, mude lá.
+- "Passa o João para a base": copie de `meus/` para `src/data/jogadores/`,
+  complete o que faltar (`Season`, `Club`…), `conferir --gravar`, commit e push.
+
 ## Limites conhecidos
 
 - A calibração usa só 7 jogadores, e nenhum deles é meia aberto, meia-atacante
@@ -124,9 +149,9 @@ O usuário **autorizou commit e push direto** quando o Claude cria jogadores:
   `navigator.clipboard`; o app cai em download e em `execCommand('copy')`. No
   endereço publicado (HTTPS) os dois funcionam.
 - Os jogadores criados no celular ficam no localStorage **daquele navegador**
-  (Safari e o app da Tela de Início são separados). O backup da aba Base gera
-  um arquivo que o "Restaurar" lê de volta. Para virar parte da base, exporte
-  o JSON e coloque em `src/data/jogadores/`.
+  (Safari e o app da Tela de Início são separados), com cópia em `meus/` se a
+  sincronia estiver ligada. O backup da aba Base gera um arquivo que o
+  "Restaurar" lê de volta, e "Trazer do PC" puxa o que está em `meus/`.
 - O GitHub Pages guarda o `index.html` em cache por até 10 minutos. O app
   compara a versão dele com a do `versao.json` publicado e oferece recarregar.
 

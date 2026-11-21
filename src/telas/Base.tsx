@@ -1,11 +1,21 @@
 import { useMemo, useRef, useState } from 'react'
-import { ClipboardPaste, Download, FileUp, Search, Upload } from 'lucide-react'
+import { ClipboardPaste, Download, FileUp, Laptop, RefreshCw, Search, Upload } from 'lucide-react'
 import { atributosDe, contexto, principalDe } from '../lib/fmrte'
 import { calcular } from '../lib/overall'
 import type { Setor } from '../lib/posicoes'
 import { lerImportado, type Registro } from '../lib/registro'
+import { normalizarEndereco, type EstadoPc } from '../lib/sincronia'
 import { GERADO_EM, VERSAO } from '../lib/versao'
 import { Botao, CaixaOvr, Campo, estiloEntrada, Folha, SiglaPosicao } from '../components/ui'
+
+interface PropsPc {
+  endereco: string
+  estado: EstadoPc
+  pendentes: number
+  onConectar: (endereco: string) => void
+  onSincronizar: () => void
+  onTrazer: () => void
+}
 
 interface Props {
   registros: Registro[]
@@ -15,6 +25,7 @@ interface Props {
   onImportar: (registros: Registro[], backup: boolean) => void
   onBackup: () => void
   avisar: (m: string) => void
+  pc: PropsPc
 }
 
 const FILTROS: (Setor | 'TODOS')[] = ['TODOS', 'GOL', 'DEF', 'MEI', 'ATA']
@@ -22,7 +33,7 @@ const FILTROS: (Setor | 'TODOS')[] = ['TODOS', 'GOL', 'DEF', 'MEI', 'ATA']
 const dataCurta = (t: number | string) =>
   new Date(t).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })
 
-export function Base({ registros, qtdMeus, ultimoBackup, onAbrir, onImportar, onBackup, avisar }: Props) {
+export function Base({ registros, qtdMeus, ultimoBackup, onAbrir, onImportar, onBackup, avisar, pc }: Props) {
   const [busca, setBusca] = useState('')
   const [setor, setSetor] = useState<Setor | 'TODOS'>('TODOS')
   const [importando, setImportando] = useState(false)
@@ -139,12 +150,16 @@ export function Base({ registros, qtdMeus, ultimoBackup, onAbrir, onImportar, on
         </ul>
       )}
 
-      <section className="mt-2 rounded-2xl border border-[var(--borda)] bg-[var(--cartao)] p-4">
+      <CartaoPc {...pc} />
+
+      <section className="rounded-2xl border border-[var(--borda)] bg-[var(--cartao)] p-4">
         <h2 className="text-sm font-semibold uppercase tracking-wider text-[var(--apagado)]">Backup</h2>
         <p className="mt-2 text-sm">
           {qtdMeus === 0
             ? 'Você ainda não salvou jogadores neste aparelho.'
-            : `${qtdMeus} ${qtdMeus === 1 ? 'jogador seu fica' : 'jogadores seus ficam'} só neste aparelho.`}
+            : pc.endereco
+              ? `${qtdMeus} ${qtdMeus === 1 ? 'jogador seu' : 'jogadores seus'} neste aparelho, com cópia no PC. O backup é uma cópia extra.`
+              : `${qtdMeus} ${qtdMeus === 1 ? 'jogador seu fica' : 'jogadores seus ficam'} só neste aparelho.`}
         </p>
         <p className="mt-1 text-xs text-[var(--apagado)]">
           O backup vira um arquivo (salve no app Arquivos). “Restaurar” traz de volta, inclusive em outro aparelho.
@@ -187,6 +202,111 @@ export function Base({ registros, qtdMeus, ultimoBackup, onAbrir, onImportar, on
         />
       )}
     </div>
+  )
+}
+
+function CartaoPc({ endereco, estado, pendentes, onConectar, onSincronizar, onTrazer }: PropsPc) {
+  const [editando, setEditando] = useState(!endereco)
+  const [texto, setTexto] = useState(endereco)
+
+  const titulo = (
+    <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wider text-[var(--apagado)]">
+      <Laptop size={16} /> Sincronizar com o PC
+    </h2>
+  )
+
+  if (editando) {
+    return (
+      <section className="mt-2 rounded-2xl border border-[var(--borda)] bg-[var(--cartao)] p-4">
+        {titulo}
+        <p className="mt-2 text-xs text-[var(--apagado)]">
+          Cada jogador que você salvar aqui vai para a pasta <b>meus</b> do PC. Com o PC desligado, ele espera numa fila
+          e vai quando o PC estiver ligado e o app aberto. Precisa do Tailscale ligado no PC e no iPhone.
+        </p>
+        <div className="mt-3">
+          <Campo rotulo="Endereço do PC">
+            <input
+              className={estiloEntrada}
+              value={texto}
+              placeholder="https://seu-pc.tailxxxx.ts.net"
+              inputMode="url"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
+              onChange={(e) => setTexto(e.target.value)}
+            />
+          </Campo>
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <Botao
+            tipo="primario"
+            onClick={() => {
+              const url = normalizarEndereco(texto)
+              if (!url) return
+              setTexto(url)
+              onConectar(url)
+              setEditando(false)
+            }}
+          >
+            Conectar
+          </Botao>
+          {endereco ? (
+            <Botao
+              tipo="perigo"
+              onClick={() => {
+                onConectar('')
+                setTexto('')
+              }}
+            >
+              Desconectar
+            </Botao>
+          ) : (
+            <span />
+          )}
+        </div>
+      </section>
+    )
+  }
+
+  const situacao = {
+    sem: { cor: 'bg-white/30', texto: 'Sem endereço' },
+    conferindo: { cor: 'animate-pulse bg-amber-400', texto: 'Procurando o PC…' },
+    online: {
+      cor: 'bg-emerald-400',
+      texto: `PC ligado · ${estado.tipo === 'online' ? estado.status.jogadores : 0} na pasta`,
+    },
+    offline: { cor: 'bg-white/30', texto: 'PC desligado ou fora do Tailscale' },
+  }[estado.tipo]
+
+  let host = endereco
+  try {
+    host = new URL(endereco).host
+  } catch {
+    // mostra como veio
+  }
+
+  return (
+    <section className="mt-2 rounded-2xl border border-[var(--borda)] bg-[var(--cartao)] p-4">
+      {titulo}
+      <div className="mt-2 flex items-center gap-2 text-sm">
+        <span className={`inline-block h-2.5 w-2.5 rounded-full ${situacao.cor}`} />
+        <span className="flex-1">{situacao.texto}</span>
+      </div>
+      <p className="mt-1 text-xs text-[var(--apagado)]">
+        {pendentes ? `${pendentes} ${pendentes === 1 ? 'mudança espera' : 'mudanças esperam'} para ir ao PC.` : 'Tudo enviado.'}{' '}
+        <button type="button" className="text-emerald-400 underline" onClick={() => setEditando(true)}>
+          {host}
+        </button>
+      </p>
+      <div className="mt-3 grid grid-cols-2 gap-2">
+        <Botao onClick={onSincronizar}>
+          <RefreshCw size={18} /> Enviar agora
+        </Botao>
+        <Botao onClick={onTrazer}>
+          <Download size={18} /> Trazer do PC
+        </Botao>
+      </div>
+    </section>
   )
 }
 

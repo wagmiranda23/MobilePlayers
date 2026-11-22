@@ -110,7 +110,8 @@ export function caminhoSeguro(raiz: string, pathname: string): string | null {
   } catch {
     return null
   }
-  if (rel.includes('\0')) return null
+  // Barra invertida: no Windows separa pastas; aqui nenhum arquivo do app usa.
+  if (rel.includes('\0') || rel.includes('\\')) return null
   if (rel === '/' || rel === '') rel = '/index.html'
   const caminho = normalize(join(raiz, rel))
   return caminho.startsWith(raiz + sep) ? caminho : null

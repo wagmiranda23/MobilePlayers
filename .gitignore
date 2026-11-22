@@ -1,8 +1,10 @@
 node_modules/
 dist/
+.pc-app/
+.pc-app-novo/
 *.log
 .DS_Store
 .claude/settings.local.json
 
-# jogadores que vêm do iPhone: ficam só no PC
+# os jogadores do usuário (criados no iPhone ou no PC): ficam só no PC
 meus/

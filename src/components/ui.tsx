@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { ChevronDown, Minus, Plus, X } from 'lucide-react'
 import { faixaDoOvr } from '../lib/overall'
 import { corDoValor } from '../lib/atributos'
@@ -134,12 +134,17 @@ export function Botao({
   )
 }
 
-/** Folha que sobe do pé da tela. Toque fora para fechar. */
+/** Folha que sobe do pé da tela (no PC, uma janela no meio). Toque fora ou Esc para fechar. */
 export function Folha({ titulo, onFechar, children }: { titulo: ReactNode; onFechar: () => void; children: ReactNode }) {
+  useEffect(() => {
+    const tecla = (e: KeyboardEvent) => e.key === 'Escape' && onFechar()
+    window.addEventListener('keydown', tecla)
+    return () => window.removeEventListener('keydown', tecla)
+  }, [onFechar])
   return (
-    <div className="fixed inset-0 z-40 flex items-end bg-black/60" onClick={onFechar}>
+    <div className="fixed inset-0 z-40 flex items-end bg-black/60 lg:items-center lg:justify-center" onClick={onFechar}>
       <div
-        className="pb-seguro mx-auto max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-t-3xl border-t border-[var(--borda)] bg-[var(--cartao)] px-4 pt-4"
+        className="pb-seguro mx-auto max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-t-3xl border-t border-[var(--borda)] bg-[var(--cartao)] px-4 pt-4 lg:max-h-[85dvh] lg:rounded-3xl lg:border"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between gap-2">

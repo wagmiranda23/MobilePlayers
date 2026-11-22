@@ -18,10 +18,17 @@ function versaoJson(): Plugin {
   }
 }
 
+// No `npm run dev`, as rotas do programa do PC vão para ele (porta 8765):
+// com `?pc` no endereço, o app finge que está aberto no PC.
+const DO_PC = ['/status', '/sincronia', '/jogadores', '/abrir-pasta']
+
 // `base: './'` deixa o build funcionar em qualquer subpasta (o GitHub Pages
 // serve em /MobilePlayers/).
 export default defineConfig({
   base: './',
+  server: {
+    proxy: Object.fromEntries(DO_PC.map((rota) => [rota, 'http://127.0.0.1:8765'])),
+  },
   define: {
     __VERSAO__: JSON.stringify(VERSAO),
     __GERADO_EM__: JSON.stringify(GERADO_EM),

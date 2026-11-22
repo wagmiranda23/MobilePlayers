@@ -7,7 +7,11 @@ import { join } from 'node:path'
 import {
   biotipoSugerido,
   comAptidao,
+  comCorpo,
+  comPes,
   comPrincipal,
+  ehDestro,
+  peFracoDe,
   idade,
   jogadorNovo,
   nomeDeArquivo,
@@ -110,4 +114,15 @@ test('backup vai e volta, e restaurar substitui pelo id', () => {
 test('lê o formato antigo do aparelho (nome fora do JSON)', () => {
   const antigo = JSON.stringify({ app: 'MobilePlayers', versao: 1, exportadoEm: '', jogadores: [{ id: 'meu:x', nome: 'Velho', dados: jogadorNovo() }] })
   assert.equal(lerImportado(antigo).registros[0].nome, 'Velho')
+})
+
+test('pés: o bom vai a 20 e o fraco ao valor escolhido; biotipo acompanha o corpo só se estiver no sugerido', () => {
+  const canhoto = comPes(jogadorNovo(), false, 6)
+  assert.equal(ehDestro(canhoto), false)
+  assert.equal(canhoto.PhysicalAttributes.LeftFoot, 20)
+  assert.equal(peFracoDe(canhoto), 6)
+
+  const j = jogadorNovo() // 180 cm, 75 kg, biotipo 3 (o sugerido)
+  assert.equal(comCorpo(j, 201, 75).BodyType, 1)
+  assert.equal(comCorpo({ ...j, BodyType: 5 }, 201, 75).BodyType, 5)
 })

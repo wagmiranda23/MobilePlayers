@@ -1,13 +1,16 @@
-// A pasta do PC (servidor/pasta.ts) e a fila do iPhone (src/lib/sincronia.ts).
+// A pasta do PC (servidor/pasta.ts), a fila e a reconciliação dos aparelhos
+// (src/lib/sincronia.ts) e o app servido no PC (servidor/app.ts).
 
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { existsSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readdirSync, readFileSync, unlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
-import { Pasta } from '../servidor/pasta.ts'
+import { join, sep } from 'node:path'
+import { Conflito, Pasta } from '../servidor/pasta.ts'
+import { caminhoSeguro } from '../servidor/app.ts'
 import { jogadorNovo } from '../src/lib/fmrte.ts'
-import { enfileirar, normalizarEndereco, semEnviados } from '../src/lib/sincronia.ts'
+import { registroMeu, type Registro } from '../src/lib/registro.ts'
+import { enfileirar, normalizarEndereco, reconciliar, semEnviados } from '../src/lib/sincronia.ts'
 
 const novaPasta = () => new Pasta(mkdtempSync(join(tmpdir(), 'mp-pasta-')))
 const jogador = (Name: string, Season: string | null = '2025/26') => ({ ...jogadorNovo(), Name, Season })
@@ -72,4 +75,74 @@ test('fila: o enviado sai, mas uma mudança feita durante o envio fica', () => {
   assert.deepEqual(resto, { b: { op: 'salvar', em: 2 } })
   // nada enviado: devolve o mesmo objeto (não dispara outro envio no React)
   assert.equal(semEnviados(durante, {}), durante)
+})
+
+test('o PC recusa uma versão mais velha do que a que ele tem (a mais recente vence)', () => {
+  const p = novaPasta()
+  p.salvar({ id: 'meu:a', dados: jogador('Novo'), atualizadoEm: 10 })
+  assert.throws(() => p.salvar({ id: 'meu:a', dados: jogador('Velho'), atualizadoEm: 5 }), Conflito)
+  assert.equal(p.listar()[0].dados.Name, 'Novo')
+  // excluir: se o jogador mudou no PC depois da exclusão no aparelho, também recusa
+  assert.throws(() => p.excluir('meu:a', new Date(), 8), Conflito)
+  assert.equal(p.excluir('meu:a', new Date(), 12), 'Novo (2025-26)')
+})
+
+test('retrato: exclusões anotadas, arquivo apagado à mão vira exclusão, e salvar de novo desfaz', () => {
+  const p = novaPasta()
+  p.salvar({ id: 'meu:a', dados: jogador('A'), atualizadoEm: 1 })
+  p.salvar({ id: 'meu:b', dados: jogador('B'), atualizadoEm: 1 })
+  p.excluir('meu:a', new Date(), 50)
+  unlinkSync(join(p.dir, 'B (2025-26).json'))
+  const r = p.retrato(99)
+  assert.deepEqual(r.jogadores, [])
+  assert.deepEqual(r.excluidos, { 'meu:a': 50, 'meu:b': 99 })
+  p.salvar({ id: 'meu:a', dados: jogador('A'), atualizadoEm: 60 })
+  assert.deepEqual(Object.keys(p.retrato().excluidos), ['meu:b'])
+})
+
+test('retrato: arquivo editado à mão conta como mudança, pela data do arquivo', () => {
+  const p = novaPasta()
+  const arquivo = p.salvar({ id: 'meu:a', dados: jogador('A'), atualizadoEm: 5 })
+  assert.equal(p.retrato().jogadores[0].atualizadoEm, 5)
+  const depois = new Date(Date.now() + 60_000)
+  utimesSync(join(p.dir, `${arquivo}.json`), depois, depois)
+  assert.ok(p.retrato().jogadores[0].atualizadoEm >= depois.getTime() - 1000)
+})
+
+const reg = (id: string, Name: string, atualizadoEm: number): Registro => registroMeu({ ...jogadorNovo(), Name }, id, atualizadoEm)
+
+test('reconciliar: vale o mais recente, chega o que é novo, sai o que foi excluído depois', () => {
+  const aqui = [reg('a', 'A velho', 1), reg('b', 'B daqui', 9), reg('c', 'C excluído', 3), reg('d', 'D nunca foi', 4), reg('e', 'E voltou', 8)]
+  const pc = {
+    jogadores: [reg('a', 'A novo', 2), reg('b', 'B do PC', 5), reg('f', 'F do PC', 1)],
+    excluidos: { c: 7, e: 6 },
+  }
+  const r = reconciliar(aqui, pc)
+  assert.deepEqual(
+    r.lista.map((x) => x.nome),
+    ['F do PC', 'A novo', 'B daqui', 'D nunca foi', 'E voltou'],
+  )
+  assert.deepEqual([r.novos, r.atualizados, r.removidos], [1, 1, 1])
+  assert.deepEqual(r.reenviar, ['b', 'd', 'e'])
+})
+
+test('reconciliar: o que está na fila não é tocado, e sem mudança devolve a mesma lista', () => {
+  const aqui = [reg('a', 'A daqui', 1)]
+  const pc = { jogadores: [reg('a', 'A do PC', 5), reg('b', 'B excluído aqui', 1)], excluidos: {} }
+  const r = reconciliar(aqui, pc, new Set(['a', 'b']))
+  assert.equal(r.mudou, false)
+  assert.equal(r.lista, aqui)
+  assert.deepEqual(r.reenviar, [])
+  const igual = reconciliar(aqui, { jogadores: [reg('a', 'A daqui', 1)], excluidos: {} })
+  assert.equal(igual.lista, aqui)
+})
+
+test('app do PC: só serve arquivos de dentro da pasta do build', () => {
+  const raiz = join(tmpdir(), 'mp-app')
+  assert.equal(caminhoSeguro(raiz, '/'), join(raiz, 'index.html'))
+  assert.equal(caminhoSeguro(raiz, '/assets/x.js'), join(raiz, 'assets', 'x.js'))
+  assert.equal(caminhoSeguro(raiz, '/../segredo.txt'), null)
+  assert.equal(caminhoSeguro(raiz, '/%2e%2e/%2e%2e/segredo.txt'), null)
+  assert.equal(caminhoSeguro(raiz, '/..%5c..%5csegredo.txt'), null)
+  assert.ok(caminhoSeguro(raiz, '/icone-192.png')!.startsWith(raiz + sep))
 })

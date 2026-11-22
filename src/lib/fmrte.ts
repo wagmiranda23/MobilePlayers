@@ -211,6 +211,29 @@ export function comAtributo(j: JogadorFmrte, chave: string, valor: number): Joga
   return { ...j, [secao]: { ...bloco, [chave]: Math.max(1, Math.min(20, Math.round(valor))) } }
 }
 
+/** Destro se o pé direito for pelo menos tão bom quanto o esquerdo. */
+export function ehDestro(j: JogadorFmrte): boolean {
+  return (j.PhysicalAttributes.RightFoot ?? 1) >= (j.PhysicalAttributes.LeftFoot ?? 1)
+}
+
+/** O valor do pé fraco (o menor dos dois). */
+export function peFracoDe(j: JogadorFmrte): number {
+  return Math.min(j.PhysicalAttributes.RightFoot ?? 1, j.PhysicalAttributes.LeftFoot ?? 1)
+}
+
+/** Pé bom em 20 e o outro com `valorFraco`. Recalcula, porque o pé fraco entra no overall. */
+export function comPes(j: JogadorFmrte, destro: boolean, valorFraco: number): JogadorFmrte {
+  let d = comAtributo(j, destro ? 'RightFoot' : 'LeftFoot', 20)
+  d = comAtributo(d, destro ? 'LeftFoot' : 'RightFoot', valorFraco)
+  return recalcular(d)
+}
+
+/** Muda altura e peso. O biotipo acompanha enquanto estiver no sugerido; se o usuário mexeu nele, fica. */
+export function comCorpo(j: JogadorFmrte, altura: number, peso: number): JogadorFmrte {
+  const seguia = j.BodyType === biotipoSugerido(j.Height, j.Weight)
+  return { ...j, Height: altura, Weight: peso, BodyType: seguia ? biotipoSugerido(altura, peso) : j.BodyType }
+}
+
 /** Muda a aptidão de uma posição que não é a principal (a principal fica em 20). */
 export function comAptidao(j: JogadorFmrte, chave: string, valor: number): JogadorFmrte {
   if (chave === principalDe(j).chave) return j

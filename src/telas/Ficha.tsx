@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { ChevronLeft, Copy, Pencil, Share, Trash2 } from 'lucide-react'
+import { ChevronLeft, Copy, CopyPlus, Pencil, Share, Trash2 } from 'lucide-react'
 import { corDoValor, doGrupo, NOME_GRUPO, type Grupo } from '../lib/atributos'
 import { aptidoesDe, atributosDe, BIOTIPOS, contexto, idade, nomeDeArquivo, paraTexto, principalDe } from '../lib/fmrte'
 import { calcular, porPosicao } from '../lib/overall'
@@ -19,11 +19,12 @@ interface Props {
   registro: Registro
   onFechar: () => void
   onEditar: (r: Registro) => void
+  onDuplicar: (r: Registro) => void
   onExcluir: (r: Registro) => void
   avisar: (m: string) => void
 }
 
-export function Ficha({ registro, onFechar, onEditar, onExcluir, avisar }: Props) {
+export function Ficha({ registro, onFechar, onEditar, onDuplicar, onExcluir, avisar }: Props) {
   const { nome, dados } = registro
   const atributos = useMemo(() => atributosDe(dados), [dados])
   const principal = principalDe(dados)
@@ -142,6 +143,11 @@ export function Ficha({ registro, onFechar, onEditar, onExcluir, avisar }: Props
           <Botao onClick={async () => avisar((await copiarTexto(texto)) ? 'JSON copiado' : 'Não deu para copiar')}>
             <Copy size={18} /> Copiar JSON
           </Botao>
+          {registro.origem === 'meu' && (
+            <Botao onClick={() => onDuplicar(registro)}>
+              <CopyPlus size={18} /> Duplicar
+            </Botao>
+          )}
           {registro.origem === 'meu' && (
             <Botao
               tipo="perigo"

@@ -12,16 +12,21 @@ Compartilhar → Adicionar à Tela de Início.
   nação, filtro por setor, ficha completa e exportação do JSON.
 - **Importar e backup**: jogador do FMRTE (arquivo ou colado), lista de
   jogadores ou backup do próprio app.
+- **Versão do PC**: em tela larga, lista, ficha no estilo do FM e campinho
+  lado a lado, atributos editáveis pelo teclado, comparar até 3 jogadores,
+  duplicar, arrastar JSONs para a janela.
 
-## Jogadores do iPhone no PC
+## iPhone e PC juntos
 
-Os jogadores salvos no iPhone vão para a pasta `meus/` do PC (nunca para o
-GitHub), pela rede do [Tailscale](https://tailscale.com):
+Os seus jogadores ficam na pasta `meus/` do PC (nunca no GitHub) e iguais em
+todos os aparelhos, pela rede do [Tailscale](https://tailscale.com): o que
+você cria no iPhone aparece no PC, e o contrário também. Se o mesmo jogador
+mudou dos dois lados, vale a mudança mais recente.
 
 1. Tailscale no PC e no iPhone, com a mesma conta.
-2. No PC: `npm run pc:instalar` (o programa liga junto com o Windows) e
-   `tailscale serve --bg 8765`.
-3. No app: Base → Sincronizar com o PC → cole o endereço `https://…ts.net`.
+2. No PC: `npm run pc:instalar` (o programa liga junto com o Windows e ganha
+   o atalho "MobilePlayers", que abre o app no PC) e `tailscale serve --bg 8765`.
+3. No iPhone: Base → Sincronizar com o PC → cole o endereço `https://…ts.net`.
 
 Com o PC desligado, as mudanças esperam numa fila no iPhone e vão quando o
 PC estiver ligado e o app aberto.

@@ -17,6 +17,11 @@ Publicado em **https://wagmiranda23.github.io/MobilePlayers/** (repositório
 público `wagmiranda23/MobilePlayers`). Cada push na `main` testa, confere a
 base e publica pelo GitHub Actions (`.github/workflows/publicar.yml`).
 
+Há também a **versão do PC**: o mesmo app, em tela larga, aberto pelo atalho
+"MobilePlayers" (área de trabalho e menu Iniciar) em `http://localhost:8765`.
+Lá os jogadores do usuário são a pasta `meus/`, a mesma que o iPhone
+sincroniza.
+
 ## Comandos
 
 | Comando | O que faz |
@@ -26,8 +31,9 @@ base e publica pelo GitHub Actions (`.github/workflows/publicar.yml`).
 | `npm test` | cálculo contra 7 exports reais do FMRTE, formato, posições e backup |
 | `npm run conferir` | confere os JSONs da base; sai com erro se houver aviso (o deploy roda isso) |
 | `npm run conferir -- --gravar "Nome (2005-06)"` | regrava CA/PA/RCA/ratings e a ordem das chaves |
-| `npm run pc` | roda o programa do PC no terminal (recebe os jogadores do iPhone) |
-| `npm run pc:instalar` / `pc:desinstalar` | liga/desliga o programa do PC junto com o Windows (atalho em `shell:startup`) |
+| `npm run pc` | roda o programa do PC no terminal (pasta `meus/`, sincronia e o app em `localhost:8765`) |
+| `npm run pc:instalar` / `pc:desinstalar` | liga/desliga o programa do PC junto com o Windows e cria/apaga os atalhos "MobilePlayers" |
+| `npm run pc:abrir` | abre o app no PC numa janela própria (o que o atalho faz) |
 
 ## Onde vive o quê
 
@@ -41,11 +47,16 @@ base e publica pelo GitHub Actions (`.github/workflows/publicar.yml`).
 | `src/lib/registro.ts` | registro (jogador + origem), backup, importação, mesclar — puro, testável |
 | `src/lib/base.ts` | a base (`src/data/jogadores/*.json`) + "meus" e rascunho (localStorage) |
 | `src/lib/versao.ts` | confere se há build novo publicado e oferece atualizar |
-| `src/lib/sincronia.ts` | fila do iPhone e envio para o PC |
-| `servidor/pc.ts`, `servidor/pasta.ts` | o programa do PC: HTTP em 127.0.0.1:8765, grava em `meus/` |
-| `meus/` | **jogadores criados no iPhone**, só no PC (no `.gitignore`, nunca vai para o GitHub) |
-| `src/telas/` | `Criar`, `Base`, `Ficha` |
-| `src/components/` | `ui.tsx` (caixas, seções, folha) e `Campinho.tsx` |
+| `src/lib/sincronia.ts` | fila, envio, retrato da pasta e `reconciliar` (os dois sentidos) |
+| `src/lib/modo.ts` | onde o app está aberto (`NO_PC`) e se a tela é larga (layout de PC a partir de 1024 px) |
+| `src/lib/lista.ts` | a lista com overall calculado, busca e filtro (celular e PC) |
+| `servidor/pc.ts` | o programa do PC: HTTP em 127.0.0.1:8765, rotas da sincronia e do app |
+| `servidor/pasta.ts` | a pasta `meus/`: índice, exclusões, conflito (409), mudanças feitas à mão |
+| `servidor/app.ts` | serve o build do app no PC (`.pc-app/`) e refaz o build quando o código ou a base mudam |
+| `servidor/*.ps1` | iniciar escondido, abrir no Edge (`--app`), instalar/desinstalar atalhos |
+| `meus/` | **os jogadores do usuário** (do iPhone e do PC), só no PC (no `.gitignore`, nunca vai para o GitHub) |
+| `src/telas/` | celular: `Criar`, `Base`, `Ficha`; PC: `pc/LayoutPc`, `pc/Painel`, `pc/Comparar` |
+| `src/components/` | `ui.tsx` (caixas, seções, folha), `Campinho`, `EscolherNivel`, `Cartoes` (sincronia e backup), `Importar` |
 | `src/data/jogadores/` | **a base**: um JSON por jogador |
 | `tests/fixtures/` | 7 exports reais (de `C:\dev\LiveEditor24`), o gabarito do cálculo |
 
@@ -117,27 +128,63 @@ O usuário **autorizou commit e push direto** quando o Claude cria jogadores:
    real (`ETNIAS`, `CABELOS`, `COMPRIMENTOS` em `fmrte.ts`). Valor novo só
    entra depois de confirmado num export.
 7. `npm test`, commit (`Adiciona Kaká (2006-07)`) e push na `main`. Em 1–2
-   minutos o GitHub publica, e o app no iPhone mostra "Base atualizada".
+   minutos o GitHub publica, e o app no iPhone mostra "Versão nova". No PC, o
+   programa nota o arquivo novo, refaz o build sozinho e o app aberto mostra o
+   mesmo aviso.
 
 ## Sincronia com o PC
 
 O GitHub guarda só o código e a base que o Claude gera. Os jogadores que o
-usuário cria no iPhone **não vão para o GitHub**: vão para `meus/`, no PC.
+usuário cria **não vão para o GitHub**: ficam em `meus/`, no PC, e numa cópia
+em cada aparelho. Vale nos dois sentidos: o que ele cria no iPhone chega no
+PC, e o que cria no PC chega no iPhone.
 
 - O iPhone fala com o programa do PC pela rede do **Tailscale** (no PC e no
   iPhone, mesma conta). No PC, `tailscale serve --bg 8765` publica o programa
-  em `https://<pc>.<rede>.ts.net`; o usuário cola esse endereço uma vez no app
-  (aba Base → Sincronizar com o PC).
-- Salvar, excluir e importar no iPhone entram numa fila no aparelho. A fila é
-  enviada quando o app está aberto e o PC responde (ao abrir, ao voltar para a
-  tela, a cada 30 s). O iOS não roda app web em segundo plano.
+  em `https://<pc>.<rede>.ts.net`; o usuário colou esse
+  endereço no app (aba Base → Sincronizar com o PC).
+- Cada mudança no aparelho entra numa fila. A sincronia roda ao abrir, ao
+  voltar para a tela e a cada 30 s (15 s no app do PC): manda a fila, puxa o
+  retrato da pasta (`GET /sincronia`) e `reconciliar` junta os dois lados.
+  **Vale a mudança mais recente** (`atualizadoEm`): o PC recusa com 409 um
+  PUT ou DELETE mais velho que a versão dele, e o retrato seguinte traz a dele.
+  O iOS não roda app web em segundo plano.
 - Em `meus/`: um JSON por jogador, com o nome de arquivo da base;
-  `.indice.json` liga o id do iPhone ao arquivo; excluir move para
-  `meus/lixeira/` (a pasta não tem git por trás); log em `.servidor.log`.
-- O programa só aceita navegador vindo do app publicado ou de localhost/rede
-  local (`ORIGENS` em `servidor/pc.ts`). Se o endereço publicado mudar, mude lá.
+  `.indice.json` liga o id de cada aparelho ao arquivo e guarda quando mudou;
+  `.excluidos.json` guarda quando cada id foi excluído; excluir move para
+  `meus/lixeira/`; log em `.servidor.log`. Mexer na pasta à mão também vale:
+  arquivo novo aparece com id `pc:<arquivo>`, editado conta como mudança (pela
+  data do arquivo), apagado conta como exclusão.
+- O app aberto no PC usa a mesma sincronia, com o próprio programa do PC como
+  endereço (`NO_PC` em `src/lib/modo.ts`; o programa põe a meta
+  `mobileplayers-pc` no index.html que ele serve).
+- O programa só aceita navegador vindo do app publicado, do próprio PC, da
+  rede local ou do endereço do Tailscale (`ORIGENS` em `servidor/pc.ts`). Se o
+  endereço publicado mudar, mude lá. `POST /abrir-pasta` só vale do próprio PC.
 - "Passa o João para a base": copie de `meus/` para `src/data/jogadores/`,
   complete o que faltar (`Season`, `Club`…), `conferir --gravar`, commit e push.
+
+## Versão do PC
+
+- `npm run pc:instalar` cria o atalho "MobilePlayers" (área de trabalho e
+  menu Iniciar). Ele chama `servidor/abrir.ps1`, que sobe o programa se
+  precisar e abre `http://localhost:8765` no Edge com `--app` (janela sem
+  barra do navegador).
+- O programa serve o build de `.pc-app/` (fora do git). Ao abrir a página ou
+  pedir o `versao.json`, ele confere se algo em `src/`, `public/`,
+  `index.html`, `vite.config.ts` ou `package.json` é mais novo que o build e,
+  se for, gera outro em `.pc-app-novo/` e troca. Mudou o código do
+  **servidor** (`servidor/*.ts`)? Aí precisa reiniciar o programa
+  (`npm run pc:desinstalar` e `npm run pc:instalar`).
+- Tela larga (a partir de 1024 px, em qualquer endereço) usa o layout de PC:
+  lista à esquerda; no meio, o jogador no jeito do perfil do FM (atributos em
+  três colunas, editáveis pelo teclado: digitar, setas, Tab/Enter, Ctrl+S
+  salva); campinho e overall por posição do lado. Jogador da base abre só
+  para ver ("Editar cópia"). Extras: comparar até 3 lado a lado, duplicar
+  (outra temporada), arrastar JSONs para a janela, "Abrir pasta" (Ajustes).
+- Para testar o layout de PC no `npm run dev`: `http://localhost:5173/?pc`
+  finge que está no PC (as rotas do programa vão para a porta 8765 pelo proxy
+  do Vite).
 
 ## Limites conhecidos
 
@@ -148,17 +195,20 @@ usuário cria no iPhone **não vão para o GitHub**: vão para `meus/`, no PC.
 - Pela rede local (http), o iPhone não tem `navigator.share` nem
   `navigator.clipboard`; o app cai em download e em `execCommand('copy')`. No
   endereço publicado (HTTPS) os dois funcionam.
-- Os jogadores criados no celular ficam no localStorage **daquele navegador**
-  (Safari e o app da Tela de Início são separados), com cópia em `meus/` se a
-  sincronia estiver ligada. O backup da aba Base gera um arquivo que o
-  "Restaurar" lê de volta, e "Trazer do PC" puxa o que está em `meus/`.
+- No celular, os jogadores do usuário ficam no localStorage **daquele
+  navegador** (Safari e o app da Tela de Início são separados), com cópia em
+  `meus/` se a sincronia estiver ligada. O backup gera um arquivo que o
+  "Restaurar" lê de volta.
+- Na comparação, o overall em cada posição ainda não desconta a aptidão (isso
+  vem com a fase 4).
 - O GitHub Pages guarda o `index.html` em cache por até 10 minutos. O app
   compara a versão dele com a do `versao.json` publicado e oferece recarregar.
 
 ## Próximas fases (combinadas com o usuário)
 
 2. Criar rápido: arquétipos, "overall alvo" (cálculo reverso), sortear regen.
-3. Coleção e compartilhar: foto, card como imagem, comparar lado a lado, radar, favoritos.
+3. Coleção e compartilhar: foto, card como imagem, comparar lado a lado no
+   celular (no PC já existe), radar, favoritos.
 4. Escalar times: lista fixa de formações (4-3-3, 4-4-2, 4-2-3-1, 3-5-2, 5-3-2,
    4-1-2-1-2…), 11 titulares + até 12 reservas, overall de cada titular na
    posição em que está com desconto pela aptidão, overall do time e por setor.

@@ -1,4 +1,5 @@
-"""Gera os ícones do app (public/icone-*.png). Rode: python scripts/icones.py"""
+"""Gera os ícones do app (public/icone-*.png) e o do atalho do Windows (servidor/icone.ico).
+Rode: python scripts/icones.py"""
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
@@ -23,3 +24,8 @@ def icone(lado: int) -> Image.Image:
 for lado in (180, 192, 512):
     icone(lado).save(PUBLIC / f"icone-{lado}.png")
     print("ok", lado)
+
+# O atalho do Windows (área de trabalho e menu Iniciar) precisa de .ico.
+ICO = PUBLIC.parent / "servidor" / "icone.ico"
+icone(256).save(ICO, sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
+print("ok", ICO.name)

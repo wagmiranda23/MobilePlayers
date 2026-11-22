@@ -1,42 +1,47 @@
 import { useMemo, useState } from 'react'
-import { Copy, Crown, FilePlus2, Save, Share } from 'lucide-react'
+import { Copy, CopyPlus, FilePlus2, Save, Share } from 'lucide-react'
 import { doGrupo, NOME_GRUPO, PES, type Grupo } from '../lib/atributos'
 import {
   atributosDe,
   biotipoSugerido,
   BIOTIPOS,
   CABELOS,
-  comAptidao,
   comAtributo,
-  comPrincipal,
+  comCorpo,
+  comPes,
   COMPRIMENTOS,
+  ehDestro,
   ETNIAS,
   idade,
   nomeDeArquivo,
   paraTexto,
+  peFracoDe,
   principalDe,
   recalcular,
   type JogadorFmrte,
 } from '../lib/fmrte'
 import { calcular, porPosicao } from '../lib/overall'
 import { PESOS } from '../lib/pesos'
-import { NIVEIS, nivelDe, type Posicao } from '../lib/posicoes'
+import type { Posicao } from '../lib/posicoes'
 import type { Rascunho } from '../lib/base'
 import { copiarTexto, exportarArquivo } from '../lib/exportar'
-import { Botao, CaixaOvr, Campo, estiloEntrada, Folha, LinhaAtributo, Secao, SiglaPosicao } from '../components/ui'
-import { Campinho, faixaDoNivel, LegendaNiveis } from '../components/Campinho'
+import { Botao, CaixaOvr, Campo, estiloEntrada, LinhaAtributo, Secao, SiglaPosicao } from '../components/ui'
+import { Campinho, LegendaNiveis } from '../components/Campinho'
+import { EscolherNivel } from '../components/EscolherNivel'
 
 interface Props {
   rascunho: Rascunho
   onChange: (r: Rascunho) => void
   onSalvar: () => void
   onNovo: () => void
+  /** Vira um jogador novo com os mesmos dados (outra temporada, por exemplo). */
+  onDuplicar: () => void
   avisar: (m: string) => void
 }
 
 const GRUPOS_OVR: Grupo[] = ['tecnico', 'mental', 'fisico']
 
-export function Criar({ rascunho, onChange, onSalvar, onNovo, avisar }: Props) {
+export function Criar({ rascunho, onChange, onSalvar, onNovo, onDuplicar, avisar }: Props) {
   const { dados } = rascunho
   const atributos = useMemo(() => atributosDe(dados), [dados])
   const principal = principalDe(dados)
@@ -51,20 +56,13 @@ export function Criar({ rascunho, onChange, onSalvar, onNovo, avisar }: Props) {
   const mudar = (d: JogadorFmrte) => onChange({ ...rascunho, dados: d })
   const mudarAtributo = (chave: string, v: number) => mudar(recalcular(comAtributo(dados, chave, v)))
 
-  const destro = (atributos.RightFoot ?? 1) >= (atributos.LeftFoot ?? 1)
-  const fraco = destro ? atributos.LeftFoot : atributos.RightFoot
-  const mudarPes = (direito: boolean, valorFraco: number) => {
-    let d = comAtributo(dados, direito ? 'RightFoot' : 'LeftFoot', 20)
-    d = comAtributo(d, direito ? 'LeftFoot' : 'RightFoot', valorFraco)
-    mudar(recalcular(d))
-  }
+  const destro = ehDestro(dados)
+  const fraco = peFracoDe(dados)
+  const mudarPes = (direito: boolean, valorFraco: number) => mudar(comPes(dados, direito, valorFraco))
 
   // O biotipo acompanha altura e peso enquanto estiver no sugerido; mexeu nele, fica.
   const sugerido = biotipoSugerido(dados.Height, dados.Weight)
-  const mudarCorpo = (altura: number, peso: number) => {
-    const seguia = dados.BodyType === sugerido
-    mudar({ ...dados, Height: altura, Weight: peso, BodyType: seguia ? biotipoSugerido(altura, peso) : dados.BodyType })
-  }
+  const mudarCorpo = (altura: number, peso: number) => mudar(comCorpo(dados, altura, peso))
 
   const texto = () => paraTexto(dados)
   const exportar = async () => {
@@ -357,13 +355,17 @@ export function Criar({ rascunho, onChange, onSalvar, onNovo, avisar }: Props) {
         <Botao onClick={onNovo}>
           <FilePlus2 size={18} /> Novo
         </Botao>
+        {rascunho.editando && (
+          <Botao className="col-span-2" onClick={onDuplicar}>
+            <CopyPlus size={18} /> Duplicar (outra temporada)
+          </Botao>
+        )}
       </div>
 
       {posicaoAberta && (
         <EscolherNivel
           posicao={posicaoAberta}
           dados={dados}
-          ovrAli={calcular(atributos, posicaoAberta).ovr}
           onMudar={(d) => {
             mudar(d)
             setPosicaoAberta(null)
@@ -372,66 +374,5 @@ export function Criar({ rascunho, onChange, onSalvar, onNovo, avisar }: Props) {
         />
       )}
     </div>
-  )
-}
-
-function EscolherNivel({
-  posicao,
-  dados,
-  ovrAli,
-  onMudar,
-  onFechar,
-}: {
-  posicao: Posicao
-  dados: JogadorFmrte
-  ovrAli: number
-  onMudar: (d: JogadorFmrte) => void
-  onFechar: () => void
-}) {
-  const ehPrincipal = principalDe(dados).chave === posicao.chave
-  const atual = nivelDe(dados.Positions[posicao.chave] ?? 1)
-  return (
-    <Folha
-      titulo={
-        <span className="flex items-center gap-2">
-          <SiglaPosicao posicao={posicao} /> {posicao.nome}
-        </span>
-      }
-      onFechar={onFechar}
-    >
-      <div className="flex items-center gap-3 rounded-xl bg-white/5 px-3 py-2">
-        <CaixaOvr ovr={ovrAli} tamanho="sm" />
-        <span className="text-sm text-[var(--apagado)]">Overall ali, pelos atributos</span>
-      </div>
-
-      {ehPrincipal ? (
-        <p className="mt-3 text-sm text-[var(--apagado)]">
-          É a posição principal: aptidão 20, e é nela que o overall é calculado. Para trocar, toque em outra posição e
-          escolha “Tornar principal”.
-        </p>
-      ) : (
-        <>
-          <div className="mt-3 flex flex-col gap-1.5">
-            {NIVEIS.map((n, i) => (
-              <button
-                key={n.id}
-                type="button"
-                onClick={() => onMudar(comAptidao(dados, posicao.chave, n.valor))}
-                className={`flex h-11 items-center gap-3 rounded-xl px-3 text-left text-sm ${
-                  atual.id === n.id ? 'bg-white/12 font-semibold' : 'bg-white/4 active:bg-white/10'
-                }`}
-              >
-                <span className={`inline-block h-4 w-4 rounded-full ${n.cor}`} />
-                <span className="flex-1">{n.nome}</span>
-                <span className="text-xs tabular-nums text-[var(--apagado)]">{faixaDoNivel(i)}</span>
-              </button>
-            ))}
-          </div>
-          <Botao tipo="primario" className="mt-3 w-full" onClick={() => onMudar(comPrincipal(dados, posicao.chave))}>
-            <Crown size={18} /> Tornar principal
-          </Botao>
-        </>
-      )}
-    </Folha>
   )
 }

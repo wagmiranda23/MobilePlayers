@@ -10,6 +10,7 @@
     "test": "tsx --test tests/*.test.ts",
     "conferir": "tsx scripts/conferir.ts",
     "pc": "tsx servidor/pc.ts",
+    "pc:abrir": "powershell -NoProfile -ExecutionPolicy Bypass -File servidor/abrir.ps1",
     "pc:instalar": "powershell -NoProfile -ExecutionPolicy Bypass -File servidor/instalar.ps1",
     "pc:desinstalar": "powershell -NoProfile -ExecutionPolicy Bypass -File servidor/desinstalar.ps1"
   },
